@@ -1,0 +1,26 @@
+---
+title: "Intro to R: Geospatial work with the sf package"
+author: "Donny Keighley"
+output: html_document
+---
+
+Let's import the well sticks and county shapefiles as sf objects and take a look at them.
+```{r, import shapefiles}
+library(sf)
+sticks = st_read('C:/Users/donal/Documents/R/sf example/Directional_Lines.shp')
+sticks
+```
+
+The first thing we notice is that it looks pretty much like a normal data.frame.  There's columns of various types with names and data.  In fact, it actually behaves much like a data.frame as well.  You can filter columns and rows the same way.  The thing that's different is the header and the geometry column.  The geometry column contains everything needed to position the object.  In the case of the sticks file, it's the start and end coordinates of each stick.  The great thing is that you don't need a row for each point.  All the geometry is contained in that column in one row.
+
+Let's plot just one stick:
+
+```{r, plot sticks}
+plot(sticks$geometry[1])
+```
+
+Sweet.  Now let's filter to one field and plot just that
+
+```{r, plot wattenberg}
+plot(sticks[sticks$Field_Name=='WATTENBERG' & sticks$Deviation=='Horizontal','geometry'],)
+```
