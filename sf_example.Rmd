@@ -7,11 +7,15 @@ output: html_document
 Let's import the well sticks and county shapefiles as sf objects and take a look at them.
 ```{r, import shapefiles}
 library(sf)
-sticks = st_read('C:/Users/donal/Documents/R/sf example/Directional_Lines.shp')
+sticks = st_read(paste0(getwd(), '/Directional_Lines.shp'))
 sticks
 ```
 
-The first thing we notice is that it looks pretty much like a normal data.frame.  There's columns of various types with names and data.  In fact, it actually behaves much like a data.frame as well.  You can filter columns and rows the same way.  The thing that's different is the header and the geometry column.  The geometry column contains everything needed to position the object.  In the case of the sticks file, it's the start and end coordinates of each stick.  The great thing is that you don't need a row for each point.  All the geometry is contained in that column in one row.
+The first thing we notice is that it looks pretty much like a normal data.frame.  There's columns of various types with names and data.  In fact, it actually behaves much like a data.frame as well.  You can filter columns and rows the same way.  
+
+The thing that's different is the header and the geometry column.  The geometry column contains everything needed to position the object.  In the case of the sticks file, it's the start and end coordinates of each stick.  The great thing is that you don't need a row for each point.  All the geometry is contained in that column in one row.
+
+The header gives you some key information, mainly how the object is projected.  In this case, we can see it's projected in UTM zone 13N NAD83.  Later, we'll see how to reproject to different coordinate systems if we want.
 
 Let's plot just one stick:
 
@@ -19,8 +23,56 @@ Let's plot just one stick:
 plot(sticks$geometry[1])
 ```
 
-Sweet.  Now let's filter to one field and plot just that
+Sweet.  Now let's just filter down to Watternberg field and see what it looks like.  We'll also cut it down to just the API and Operator fields.
 
 ```{r, plot wattenberg}
-plot(sticks[sticks$Field_Name=='WATTENBERG' & sticks$Deviation=='Horizontal','geometry'],)
+wb = sticks[sticks$Field_Name=='WATTENBERG',c('API', 'Operator')]
+plot(wb$geometry)
 ```
+
+Let's say we only want to look at the longest wells.  Let's first get the length of each well.  We'll use the st_length function.  We'll also convert the values to feet.  In this case, the lengths will be in meters because the projection (UTM) is in meters.
+
+```{r, get length}
+wb$length = as.numeric(st_length(wb))*3.28084
+head(wb, 5)
+```
+
+Cool, now let's just filter to wells over 5000' long.
+
+```{r, filter to long}
+wb = wb[wb$length>=5000,]
+```
+
+Let's say we only want wells in a specific county.  First, we can load the county shapefile.
+
+```{r, get specific county}
+counties = st_read(paste0(getwd(), '/tl_2016_08_cousub.shp'))
+counties
+```
+
+Notice that the county shapefile isn't in the same projection as the wells.  In fact it's in lat/lon so it isn't projected at all.  We'll need to transform it to the same projection for us to do calculations with them both.  While we're at it, why don't we convert them both to Colorado Central State Plane coordinates.  That way our units will be in feet.
+
+To do the conversion we need to know the EPSG number of the coordinate system we want to convert to.  I usually find them on spatialreference.org.  In this case the EPSG number of Colorado Central State Plane in NAD27 is 26754.
+
+```{r, convert coordinates}
+  wb = st_transform(wb, 26754)
+  counties = st_transform(counties, 26754)
+```
+
+Now that they're in the same projection we can plot them together.
+
+```{r, plot counties and wattenberg}
+plot(counties$geometry)
+plot(wb$geometry, add=TRUE, col='red')
+```
+
+Let's say we want to clip the wells to the wells in just Weld County.
+
+```{r, intersect county and well}
+weld = counties[counties$COUNTYFP=='123',]
+wbWeld = st_intersection(wb, weld)
+plot(weld$geometry)
+plot(wbWeld$geometry, add=TRUE, col='green')
+```
+
+Now, let's say we want to count the number of wells within a mile of every well
