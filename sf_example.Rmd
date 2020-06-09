@@ -4,75 +4,148 @@ author: "Donny Keighley"
 output: html_document
 ---
 
-Let's import the well sticks and county shapefiles as sf objects and take a look at them.
-```{r, import shapefiles}
+Alot of the things we do every day in the oil and gas industry are spatial in nature.  In fact most of them can be automated without much work if you know how.  I've automated well spacing calculations, sticking up acreage, creating operatorship maps, and projecting surveys to name a few.  Recently I've relied on the sf package in R to do this.
+
+sf stands for "Simple Features" and is a relatively new R package.  Simple features are basically just a condensed way to describe shapes from points to lines to polygons.  The package lets you do basic GIS functions with these features like transform coordinates, intersect shapes, calculate distances, and create buffer polygons.
+
+It's probably easier to just show you a few things it can do and hopefully that will give you a flavor of what's possible so you can explore more on your own.
+
+Let's get started!  We'll start with some simple density calculations that are a version of something I use all the time.  But first, let's install the package like you would any other package:
+
+```{r, install package, eval=FALSE}
+install.packages('sf')
+```
+
+And load it like this:
+
+```{r, load package, echo=FALSE}
 library(sf)
-sticks = st_read(paste0(getwd(), '/Directional_Lines.shp'))
-sticks
 ```
 
-The first thing we notice is that it looks pretty much like a normal data.frame.  There's columns of various types with names and data.  In fact, it actually behaves much like a data.frame as well.  You can filter columns and rows the same way.  
+Next, let's download some free shapefiles to experiment on.  First, let's get a shapefile of Colorado counties.
 
-The thing that's different is the header and the geometry column.  The geometry column contains everything needed to position the object.  In the case of the sticks file, it's the start and end coordinates of each stick.  The great thing is that you don't need a row for each point.  All the geometry is contained in that column in one row.
-
-The header gives you some key information, mainly how the object is projected.  In this case, we can see it's projected in UTM zone 13N NAD83.  Later, we'll see how to reproject to different coordinate systems if we want.
-
-Let's plot just one stick:
-
-```{r, plot sticks}
-plot(sticks$geometry[1])
+```{r, download counties, eval=FALSE}
+link = 'https://storage.googleapis.com/co-publicdata/lm_cnty.zip'
+destination = paste0(getwd(), '/', basename(link))``
+download.file(url=link, destfile = destination, mode='wb')
+unzip(destination, exdir=getwd())
+unlink(destination)
 ```
 
-Sweet.  Now let's just filter down to Watternberg field and see what it looks like.  We'll also cut it down to just the API and Operator fields.
+And next we'll download a shapefile of Colorado oil and gas wells from the COGCC.
 
-```{r, plot wattenberg}
-wb = sticks[sticks$Field_Name=='WATTENBERG',c('API', 'Operator')]
-plot(wb$geometry)
+```{r, download wells, eval=FALSE}
+link = 'https://cogcc.state.co.us/documents/data/downloads/gis/DIRECTIONAL_LINES_SHP.ZIP'
+destination = paste0(getwd(), '/', basename(link))
+download.file(url=link, destfile = destination, mode='wb')
+unzip(destination, exdir=getwd())
+unlink(destination)
 ```
 
-Let's say we only want to look at the longest wells.  Let's first get the length of each well.  We'll use the st_length function.  We'll also convert the values to feet.  In this case, the lengths will be in meters because the projection (UTM) is in meters.
+Hopefully that works on non-Windows machines.  If not, just download and unzip the files like normal and put them in your current working directory.  Your working directory is the default place R looks for files.  Don't know your current working directory path?  Look it up like this:
+
+```{r, getwd}
+getwd()
+```
+
+Now let's get to the fun.  First import your shapefiles.  As you'll see, most of the function names in the sf package begin with st_ and are pretty well named.  We'll use st_read to import the shapefiles.  You can see all the functions available in the [manual](https://cran.r-project.org/web/packages/sf/sf.pdf).
+
+```{r, import shapefiles, echo=FALSE}
+wells = st_read(paste0(getwd(), '/Directional_Lines.shp'))
+counties = st_read(paste0(getwd(), '/lm_cnty.shp'))
+```
+
+We now have a simple features collection (sfc) called wells and an sfc called counties.  Here's what the first 5 rows of the wells sfc looks like:
+
+```{r, show well}
+head(wells, 5)
+```
+
+If you've used R before, you'll notice it looks pretty much like a data.frame... and it is!  Filtering, merging, indexing, etc all behave just like a data.frame.  There are two differences.  One you can see the header at the top.  It contains the projection information which tells you what the coordinate system is.  The second is the 'geometry' column.  Those are the simple features and in this case they contain all the information necessary to draw a well survey.  Because of that, we store the information for one well in only one line of a table!  No more needlessly repeating data hundreds of time because there's hundreds of rows in a directional survey... not like I'd ever do anything like that...
+
+Anyway, one of the first things you need to do when working with spatial data is get everything on the same appropriate projection.  We can see what projections are like this:
+
+```{r, check projections}
+st_crs(wells)$input
+st_crs(counties)$input
+```
+
+We can see they're not the same.  Let's convert them to Colorado Central State Plane coordinates.  To do that we need to need to know the EPSG number of the projection.  I usually look them up on [spatialreference.org](https://spatialreference.org/).  After that we use the appropriately named st_transform function.
+
+```{r, transform coordinates}
+wells = st_transform(wells, 26745)
+counties = st_transform(counties, 26754)
+```
+
+Now, let's look at one well.  But not just any well of course.  Let's find the longest horizontal.  We can get the length of each feature with the st_length command.  Then we can use which.max to tell us the index of the longest one.  We'll plot with the plot function which is available in base R.
+
+```{r, plot well}
+longest_well_index = which.max(st_length(wells))
+plot(wells[longest_well_index, 'geometry'])
+```
+
+Looks like a number one!  Also looks like it's part of a pad.  How do we find its padmates?  If only we had some way to find the wells within a certain distance of another well...  For that, we'll use a couple functions.  First, the st_buffer function to make a polygon a mile around the well.
+
+```{r, make buffer}
+buffer = st_buffer(wells[longest_well_index,], dist=5280)
+plot(buffer$geometry)
+plot(wells[longest_well_index,'geometry'], add=TRUE, col='red')
+```
+
+Then we can use st_intersects to find the other wells that intersect that polygon.
+
+```{r, get padmates}
+ints = st_intersects(buffer, wells)
+ints
+```
+
+st_intersects outputs a list the same length as the first argument.  Each element of list contains the indices of the other argument that intersect the first.
+
+```{r, plot padmates}
+plot(buffer$geometry)
+plot(wells[ints[[1]], 'geometry'], add=TRUE, col='green')
+plot(wells[longest_well_index,'geometry'], add=TRUE, col='red')
+```
+
+Excellent.  But what if we want only the parts of the wells inside the buffer?  For that, we use st_intersection.
+
+```{r, get intersection}
+wellInts = st_intersection(wells[ints[[1]],], buffer$geometry)
+plot(buffer$geometry)
+plot(wells[ints[[1]], 'geometry'], add=TRUE, col='green')
+plot(wells[longest_well_index,'geometry'], add=TRUE, col='red')
+plot(wellInts$geometry, add=TRUE, col='blue')
+```
+
+Don't worry about the warning.  When it intersects things it assumes that the other columns can be propagated from the first argument to the second.  It's just telling you that it's doing that.  If you don't want them to, then just limit the number of columns.
+
+Anyway, now if we want to know the total length of offset wellbore within that polygon we can simply calculate the lengths and sum the up like so.  We'll divide by the length of the original well we started looking at to turn it into more of a well density.
 
 ```{r, get length}
-wb$length = as.numeric(st_length(wb))*3.28084
-head(wb, 5)
+wellInts$length = as.numeric(st_length(wellInts))
+length = sum(wellInts$length, na.rm=TRUE)
+density = length/mean(wellInts$length, na.rm=TRUE)
+density
 ```
 
-Cool, now let's just filter to wells over 5000' long.
+But who just wants to know the density of just one well?!  Let's loop them all... well most of them anyway.  Using full directional surveys to do this is pretty intensive, so I'm just going to limit this to Wattenberg horizontals.  We'll also use st_simplify to reduce the number of points using a 10' tolerance.  Even then it takes awhile on my slow laptop (10 min or so).  I usually use two point well sticks and parLapply to speed things up, but in the name of simplicity let's just do this the slow way.
 
-```{r, filter to long}
-wb = wb[wb$length>=5000,]
+```{r, make density map}
+wells = wells[wells$Deviation=='Horizontal' & !is.na(wells$Deviation), ]
+wells = wells[wells$Field_Name=='WATTENBERG', ]
+wells = st_simplify(wells, dTolerance = 20)
+buffers = st_buffer(wells, dist=2640)
+ints = st_intersects(buffers, wells)
+getDensity = function(buffer, wellSubset){
+  wInt = suppressWarnings(st_intersection(buffer, wellSubset))
+  wInt$intersected_length = as.numeric(st_length(wInt))
+  density = sum(wInt$intersected_length, na.rm=TRUE)/mean(wInt$intersected_length, na.rm=TRUE)
+}
+density = lapply(1:nrow(buffers), function(i) getDensity(buffers[i,], wells[ints[[i]],]))
+density = do.call(c, density)
+wells$density = density
+plot(wells[,'density'])
+plot(counties, add=TRUE)
 ```
 
-Let's say we only want wells in a specific county.  First, we can load the county shapefile.
-
-```{r, get specific county}
-counties = st_read(paste0(getwd(), '/tl_2016_08_cousub.shp'))
-counties
-```
-
-Notice that the county shapefile isn't in the same projection as the wells.  In fact it's in lat/lon so it isn't projected at all.  We'll need to transform it to the same projection for us to do calculations with them both.  While we're at it, why don't we convert them both to Colorado Central State Plane coordinates.  That way our units will be in feet.
-
-To do the conversion we need to know the EPSG number of the coordinate system we want to convert to.  I usually find them on spatialreference.org.  In this case the EPSG number of Colorado Central State Plane in NAD27 is 26754.
-
-```{r, convert coordinates}
-  wb = st_transform(wb, 26754)
-  counties = st_transform(counties, 26754)
-```
-
-Now that they're in the same projection we can plot them together.
-
-```{r, plot counties and wattenberg}
-plot(counties$geometry)
-plot(wb$geometry, add=TRUE, col='red')
-```
-
-Let's say we want to clip the wells to the wells in just Weld County.
-
-```{r, intersect county and well}
-weld = counties[counties$COUNTYFP=='123',]
-wbWeld = st_intersection(wb, weld)
-plot(weld$geometry)
-plot(wbWeld$geometry, add=TRUE, col='green')
-```
-
-Now, let's say we want to count the number of wells within a mile of every well
+And that's pretty much it!  There's obviously a lot more you can do, but hopefully that's enough to get you started exploring the sf package and automating some spatial tasks.

@@ -74,3 +74,22 @@ lengths = do.call(c, lengths)
 wells$offset_length = lengths
 plot(wells[,'offset_length'])
 
+longest_well_index = which.max(st_length(wells))
+plot(wells[longest_well_index, 'geometry'])
+
+buffer = st_buffer(wells[longest_well_index,], dist=5280)
+plot(buffer$geometry)
+plot(wells[longest_well_index,'geometry'], add=TRUE, col='red')
+
+ints = st_intersects(buffer, wells)
+ints
+
+plot(buffer$geometry)
+plot(wells[ints[[1]], 'geometry'], add=TRUE, col='green')
+plot(wells[longest_well_index,'geometry'], add=TRUE, col='red')
+
+wellInts = st_intersection(buffer$geometry, wells[ints[[1]],])
+plot(buffer$geometry)
+plot(wells[ints[[1]], 'geometry'], add=TRUE, col='green')
+plot(wells[longest_well_index,'geometry'], add=TRUE, col='red')
+plot(wellInts$geometry, add=TRUE, col='blue')
