@@ -116,3 +116,6 @@ plot(buffer$geometry)
 plot(wells[ints[[1]], 'geometry'], add=TRUE, col='green')
 plot(wells[longest_well_index,'geometry'], add=TRUE, col='red')
 plot(wellInts$geometry, add=TRUE, col='blue')
+
+junk=1
+stuff=2
