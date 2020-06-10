@@ -18,21 +18,11 @@ install.packages('sf')
 
 And load it like this:
 
-```{r, load package, echo=FALSE}
+```{r, load package, message=FALSE}
 library(sf)
 ```
 
-Next, let's download some free shapefiles to experiment on.  First, let's get a shapefile of Colorado counties.
-
-```{r, download counties, eval=FALSE}
-link = 'https://storage.googleapis.com/co-publicdata/lm_cnty.zip'
-destination = paste0(getwd(), '/', basename(link))``
-download.file(url=link, destfile = destination, mode='wb')
-unzip(destination, exdir=getwd())
-unlink(destination)
-```
-
-And next we'll download a shapefile of Colorado oil and gas wells from the COGCC.
+Next, let's download a free shapefile to work with.  In this case, the well spots and lines from the COGCC.
 
 ```{r, download wells, eval=FALSE}
 link = 'https://cogcc.state.co.us/documents/data/downloads/gis/DIRECTIONAL_LINES_SHP.ZIP'
@@ -42,20 +32,19 @@ unzip(destination, exdir=getwd())
 unlink(destination)
 ```
 
-Hopefully that works on non-Windows machines.  If not, just download and unzip the files like normal and put them in your current working directory.  Your working directory is the default place R looks for files.  Don't know your current working directory path?  Look it up like this:
+Hopefully that works on non-Windows machines.  If not, just download and unzip the file like normal and put it in your current working directory.  Your working directory is the default place R looks for files.  Don't know your current working directory path?  Look it up like this:
 
 ```{r, getwd}
 getwd()
 ```
 
-Now let's get to the fun.  First import your shapefiles.  As you'll see, most of the function names in the sf package begin with st_ and are pretty well named.  We'll use st_read to import the shapefiles.  You can see all the functions available in the [manual](https://cran.r-project.org/web/packages/sf/sf.pdf).
+Now let's get to the fun.  First we'll import our shapefiles to R.  As you'll see, most of the function names in the sf package begin with st_ and are pretty well named.  We'll use st_read to import the shapefiles.  You can see all the functions available in the [manual](https://cran.r-project.org/web/packages/sf/sf.pdf).
 
-```{r, import shapefiles, echo=FALSE}
+```{r, import shapefiles, message=FALSE}
 wells = st_read(paste0(getwd(), '/Directional_Lines.shp'))
-counties = st_read(paste0(getwd(), '/lm_cnty.shp'))
 ```
 
-We now have a simple features collection (sfc) called wells and an sfc called counties.  Here's what the first 5 rows of the wells sfc looks like:
+We now have a simple features collection (sfc) called wells.  Here's what the first 5 rows of it look like:
 
 ```{r, show well}
 head(wells, 5)
@@ -63,18 +52,16 @@ head(wells, 5)
 
 If you've used R before, you'll notice it looks pretty much like a data.frame... and it is!  Filtering, merging, indexing, etc all behave just like a data.frame.  There are two differences.  One you can see the header at the top.  It contains the projection information which tells you what the coordinate system is.  The second is the 'geometry' column.  Those are the simple features and in this case they contain all the information necessary to draw a well survey.  Because of that, we store the information for one well in only one line of a table!  No more needlessly repeating data hundreds of time because there's hundreds of rows in a directional survey... not like I'd ever do anything like that...
 
-Anyway, one of the first things you need to do when working with spatial data is get everything on the same appropriate projection.  We can see what projections are like this:
+Anyway, one of the first things you need to do when working with spatial data is get everything on the appropriate projections.  We can see what projections are like this:
 
 ```{r, check projections}
 st_crs(wells)$input
-st_crs(counties)$input
 ```
 
-We can see they're not the same.  Let's convert them to Colorado Central State Plane coordinates.  To do that we need to need to know the EPSG number of the projection.  I usually look them up on [spatialreference.org](https://spatialreference.org/).  After that we use the appropriately named st_transform function.
+We can see they're in UTM Zone 13 NAD83.  Let's convert to Colorado Central State Plane coordinates.  To do that we need to need to know the EPSG number of the projection.  I usually look them up on [spatialreference.org](https://spatialreference.org/).  After that we use the appropriately named st_transform function.
 
 ```{r, transform coordinates}
-wells = st_transform(wells, 26745)
-counties = st_transform(counties, 26754)
+wells = st_transform(wells, 26754)
 ```
 
 Now, let's look at one well.  But not just any well of course.  Let's find the longest horizontal.  We can get the length of each feature with the st_length command.  Then we can use which.max to tell us the index of the longest one.  We'll plot with the plot function which is available in base R.
@@ -107,9 +94,45 @@ plot(wells[ints[[1]], 'geometry'], add=TRUE, col='green')
 plot(wells[longest_well_index,'geometry'], add=TRUE, col='red')
 ```
 
-Excellent.  But what if we want only the parts of the wells inside the buffer?  For that, we use st_intersection.
+Excellent.  What if we want to drill our own pad?  We can make our own features like this.  First we'll make the coordinates of the new wells using the offset well like this.  Basically we're just making a little dataframe with a start and end point for three locations.  They also have id's to tell us which points belong to which well.
+
+```{r, make wells}
+longest_well_coords = st_coordinates(wells[longest_well_index,])
+max_x = max(longest_well_coords[,1])
+min_x = longest_well_coords[which.max(longest_well_coords[,2]),1]
+min_y = min(longest_well_coords[,2])
+max_y = max(longest_well_coords[,2])
+x = c(max_x + 660, min_x + 660, max_x+1320, min_x+1320, max_x+1980, min_x+1980)
+y = c(min_y, max_y, min_y, max_y, min_y, max_y)
+id = rep(1:(length(x)/2), each = 2)
+coords = data.frame(x,y,id)
+coords
+```
+
+Then  we'll turn them into simple features using st_linestring and lapply.  Finally we'll set the coordinate reference system to be the same as the existing wells using st_crs. 
+
+```{r, make well sf}
+g = lapply(unique(id), function(i) st_linestring(as.matrix(coords[coords$id==i,c('x','y')])))
+g = st_sf('geometry' = st_sfc(g))
+st_crs(g) = st_crs(wells)
+
+plot(buffer$geometry)
+plot(wells[ints[[1]], 'geometry'], add=TRUE, col='green')
+plot(wells[longest_well_index,'geometry'], add=TRUE, col='red')
+plot(g$geometry, add=TRUE, col='purple')
+```
+
+If we want to add our new locations to the wells we can use sf:::rbind.sf.  Although, we have to make sure they have the same number of columns first.
+
+```{r, join locs to wells}
+g[,names(wells)[!(names(wells) %in% 'geometry')]]=NA
+wells = sf:::rbind.sf(wells, g)
+```
+
+Now what if we want only the parts of the wells inside the buffer?  For that, we use st_intersection.  We'll check again which wells intersect our buffers first so we capture our newly created wells.
 
 ```{r, get intersection}
+ints = st_intersects(buffer, wells)
 wellInts = st_intersection(wells[ints[[1]],], buffer$geometry)
 plot(buffer$geometry)
 plot(wells[ints[[1]], 'geometry'], add=TRUE, col='green')
@@ -119,7 +142,7 @@ plot(wellInts$geometry, add=TRUE, col='blue')
 
 Don't worry about the warning.  When it intersects things it assumes that the other columns can be propagated from the first argument to the second.  It's just telling you that it's doing that.  If you don't want them to, then just limit the number of columns.
 
-Anyway, now if we want to know the total length of offset wellbore within that polygon we can simply calculate the lengths and sum the up like so.  We'll divide by the length of the original well we started looking at to turn it into more of a well density.
+Anyway, now if we want to know the total length of offset wellbore within that polygon we can simply calculate the lengths and sum the up like so.  We'll divide by the average length of the intersected wells to turn it into more of a well density.
 
 ```{r, get length}
 wellInts$length = as.numeric(st_length(wellInts))
@@ -128,9 +151,9 @@ density = length/mean(wellInts$length, na.rm=TRUE)
 density
 ```
 
-But who just wants to know the density of just one well?!  Let's loop them all... well most of them anyway.  Using full directional surveys to do this is pretty intensive, so I'm just going to limit this to Wattenberg horizontals.  We'll also use st_simplify to reduce the number of points using a 10' tolerance.  Even then it takes awhile on my slow laptop (10 min or so).  I usually use two point well sticks and parLapply to speed things up, but in the name of simplicity let's just do this the slow way.
+But who just wants to know the density of just one well?!  Let's loop them all... well most of them anyway.  Using full directional surveys to do this is pretty intensive, so I'm just going to limit this to Wattenberg horizontals.  We'll also use st_simplify to reduce the number of points using a 20' tolerance.  Even then it takes awhile on my slow laptop (10 min or so).  I usually use two point well sticks and parLapply to speed things up, but in the name of simplicity let's just do this the slow way.
 
-```{r, make density map}
+```{r, make density map, cache=TRUE}
 wells = wells[wells$Deviation=='Horizontal' & !is.na(wells$Deviation), ]
 wells = wells[wells$Field_Name=='WATTENBERG', ]
 wells = st_simplify(wells, dTolerance = 20)
@@ -145,7 +168,6 @@ density = lapply(1:nrow(buffers), function(i) getDensity(buffers[i,], wells[ints
 density = do.call(c, density)
 wells$density = density
 plot(wells[,'density'])
-plot(counties, add=TRUE)
 ```
 
 And that's pretty much it!  There's obviously a lot more you can do, but hopefully that's enough to get you started exploring the sf package and automating some spatial tasks.

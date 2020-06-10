@@ -81,6 +81,29 @@ buffer = st_buffer(wells[longest_well_index,], dist=5280)
 plot(buffer$geometry)
 plot(wells[longest_well_index,'geometry'], add=TRUE, col='red')
 
+longest_well_coords = st_coordinates(wells[longest_well_index,])
+max_x = max(longest_well_coords[,1])
+min_x = longest_well_coords[which.max(longest_well_coords[,2]),1]
+min_y = min(longest_well_coords[,2])
+max_y = max(longest_well_coords[,2])
+x = c(max_x + 660, min_x + 660, max_x+1320, min_x+1320, max_x+1980, min_x+1980)
+y = c(min_y, max_y, min_y, max_y, min_y, max_y)
+id = rep(1:(length(x)/2), each = 2)
+coords = data.frame(x,y,id)
+g = lapply(unique(id), function(i) st_linestring(as.matrix(coords[coords$id==i,c('x','y')])))
+g = st_sf('geometry' = st_sfc(g))
+st_crs(g) = st_crs(wells)
+buffer = st_buffer(wells[longest_well_index,], dist=5280)
+plot(buffer$geometry)
+plot(wells[longest_well_index,'geometry'], add=TRUE, col='red')
+plot(g$geometry, add=TRUE, col='purple')
+
+
+g[,names(wells)[!(names(wells) %in% 'geometry')]]=NA
+wells = sf:::rbind.sf(wells, g)
+
+coords = matrix(x,y,ncol=2,byrow=FALSE)
+
 ints = st_intersects(buffer, wells)
 ints
 
