@@ -3,14 +3,18 @@ title: "Intro to R: Geospatial work with the sf package"
 author: "Donny Keighley"
 output: html_document
 ---
+We do alot of spatial stuff in the oil and gas industry.  Unfortunately, we do alot of it by hand.  This wastes time, introduces human error, and leads to unrepeatable analysis.  Fortunately it doesn't have to be this way!  In fact, if you can describe a spatial process you want done to a person, you can probably code it up so a computer can do it.  I do this all the time with everything from well spacing calculations to creating operatorship maps.  In this talk, I'm going to show you how to do a quick and dirty well density calculation using my preferred tool: the sf package in R.
 
-Alot of the things we do every day in the oil and gas industry are spatial in nature.  In fact most of them can be automated without much work if you know how.  I've automated well spacing calculations, sticking up acreage, creating operatorship maps, and projecting surveys to name a few.  Recently I've relied on the sf package in R to do this.
+SF stands for "Simple Features" and it is a relatively new R package.  Simple features are basically just a condensed way to describe shapes from points to lines to polygons.  The package lets you do basic GIS functions with these features like transform coordinates, intersect shapes, calculate distances, and create buffer polygons.
 
-sf stands for "Simple Features" and is a relatively new R package.  Simple features are basically just a condensed way to describe shapes from points to lines to polygons.  The package lets you do basic GIS functions with these features like transform coordinates, intersect shapes, calculate distances, and create buffer polygons.
+It's probably easier to just show you a few things it can do and hopefully that will give you a flavor of what's possible so you can explore more on your own.  Let's get started!  
 
-It's probably easier to just show you a few things it can do and hopefully that will give you a flavor of what's possible so you can explore more on your own.
-
-Let's get started!  We'll start with some simple density calculations that are a version of something I use all the time.  But first, let's get into R.  It's pretty simple.  We'll just install and run it locally.  You just need to download [R](https://cran.r-project.org/) and [RStudio](https://rstudio.com/products/rstudio/download/).  After that open up RStudio.  Go to File > New Project > New Directory > New Project and create a new project.  Then go to File > New File > R Script.  You should be looking at something like this.
+<center>
+![](./letsdoit.gif)
+</center>
+\newline
+\newline
+First, let's get into R using RStudio.  It's pretty simple.  We'll just install R and run it locally.  You just need to download [R](https://cran.r-project.org/) and [RStudio](https://rstudio.com/products/rstudio/download/).  After that open up RStudio.  Go to File > New Project > New Directory > New Project and create a new project.  Then go to File > New File > R Script.  You should be looking at something like this.
 
 ![](./RStudio.PNG)
 
@@ -44,7 +48,7 @@ If you need help with a specific function you can type ?*function name*
 
 RStudio has alot more features, but to get going, that's about all you need to know.  
 
-Let's get started with some analysis.  First, we'll download a free shapefile to work with.  In this case, the well spots and lines from the COGCC.
+Let's get started with some analysis.  First, we'll download a free shapefile to work with.  In this case, the well spots and lines from the COGCC.  There's also some code in here to unzip it and then delete the zip file.
 
 ```{r, download wells, eval=FALSE}
 link = 'https://cogcc.state.co.us/documents/data/downloads/gis/DIRECTIONAL_LINES_SHP.ZIP'
@@ -72,9 +76,9 @@ We now have a simple features collection (sfc) called wells.  Here's what the fi
 head(wells, 5)
 ```
 
-If you've used R before, you'll notice it looks pretty much like a **data.frame**... and it is!  Filtering, merging, indexing, etc all behave just like a **data.frame**.  There are two differences.  One you can see the header at the top.  It contains the projection information which tells you what the coordinate system is.  The second is the **geometry** column.  Those are the simple features and in this case they contain all the information necessary to draw a well survey.  Because of that, we store the information for one well in only one line of a table!  No more needlessly repeating data hundreds of time because there's hundreds of rows in a directional survey... not like I've ever done anything like that...
+If you've used R before, you'll notice it looks pretty much like a **data.frame**... and it is!  Filtering, merging, indexing, etc all behave just like a **data.frame**.  There are two differences.  One you can see the header at the top.  It contains the projection information which tells you what the coordinate system is.  The second is the **geometry** column.  Those are the simple features and in this case they contain all the information necessary to draw a well survey.  Because of that, we store the information for one well in only one line of a table!  No more needlessly repeating data hundreds of time because there's hundreds of rows in a directional survey... not that I've ever done anything like that...
 
-Anyway, one of the first things you need to do when working with spatial data is get everything on the appropriate projection.  We can see what projection is like this:
+Anyway, one of the first things you need to do when working with spatial data is to get everything on the appropriate projection.  We can see what projection is like this:
 
 ```{r, check projections}
 st_crs(wells)$input
@@ -86,7 +90,7 @@ We can see they're in UTM Zone 13 NAD83.  Let's convert to Colorado Central Stat
 wells = st_transform(wells, 26754)
 ```
 
-Now, let's look at one well.  But not just any well of course.  Let's find the longest horizontal.  We can get the length of each feature with the *st_length* function.  Then we can use *which.max* to tell us the index of the longest one.  Finally We'll plot with the *plot* function which is available in base R.
+Now, let's look at one well.  But not just any well of course.  Let's find the longest horizontal.  We can get the length of each feature with the *st_length* function.  Then we can use *which.max* to tell us the index of the longest one.  Finally we'll plot with the *plot* function which is available in base R.
 
 ```{r, plot well}
 longest_well_index = which.max(st_length(wells))
@@ -144,7 +148,7 @@ plot(wells[longest_well_index,'geometry'], add=TRUE, col='red')
 plot(g$geometry, add=TRUE, col='purple')
 ```
 
-If we want to add our new locations to the wells we can use *sf:::rbind.sf*, although, we have to make sure they have the same number of columns first.
+If we want to add our new locations to the wells we can use *rbind*, although, we have to make sure they have the same number of columns first.  Also, this package is still pretty new.  I find that sometimes *rbind* doesn't work well and I have to force it to use the sf version of *rbind* directly.  You can access the internal (hidden) functions of a package using three colons like this *sf:::rbind.sf*.
 
 ```{r, join locs to wells}
 g[,names(wells)[!(names(wells) %in% 'geometry')]]=NA
@@ -162,7 +166,7 @@ plot(wells[longest_well_index,'geometry'], add=TRUE, col='red')
 plot(wellInts$geometry, add=TRUE, col='blue')
 ```
 
-Don't worry about the warning.  When it intersects things it assumes that the other columns can be propagated from the first argument to the second.  It's just telling you that it's doing that.  If you don't want them to, then just limit the number of columns.
+Don't worry about the warning.  When it intersects things it assumes that the other columns can be propagated from the first argument to the second.  It's just telling you that it's doing that.  If you don't want them to, then just limit the number of columns.  Or if it realllllly bothers you you can wrap it in the *suppressWarnings* function.
 
 Anyway, now if we want to know the total length of offset wellbore within that polygon we can simply calculate the lengths and sum the up like so.  We'll divide by the average length of the intersected wells to turn it into more of a well density.
 
@@ -192,4 +196,12 @@ wells$density = density
 plot(wells[,'density'])
 ```
 
-And that's pretty much it!  There's obviously a lot more you can do, but hopefully that's enough to get you started exploring the sf package and automating some spatial tasks.
+<center>
+![](./yes.gif)
+</center>
+  
+  
+And that's pretty much it!  There's obviously a lot more you can do, but hopefully that's enough to get you started exploring the sf package and automating some spatial tasks.  If you have any questions, send me an email at <donald.keighley@gmail.com> or hit me up on [Linkedin](
+https://www.linkedin.com/in/donald-keighley-2698ba17a/).
+  
+
